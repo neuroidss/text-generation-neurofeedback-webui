@@ -1,3 +1,21 @@
+# Text generation neurofeedback
+possibility to stream EEG coherence into Text generation: 
+https://github.com/neuroidss/timeflux_neurofeedback_inverse_gamepad/blob/master/examples/neurofeedback_coherence_text_generation.yaml#L212
+```yaml
+      module: timeflux_neurofeedback_inverse_gamepad.nodes.gradiostreamer
+      class: GradioStreamer
+```
+
+here where eeg coherence applied to transformer attention in Text generation:
+https://github.com/neuroidss/text-generation-neurofeedback-webui/blob/main/modules/llama_attn_hijack.py#L155
+```python
+          if query_states.shape[2] == key_states.shape[3]:
+            attention_mask = _coherence_attention_mask(query_states, key_states)
+          else:
+            attention_mask = _coherence_attention_mask(attention_mask, key_states)
+          attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask, is_causal=False)
+```
+
 # Text generation web UI
 
 A gradio web UI for running Large Language Models like LLaMA, llama.cpp, GPT-J, Pythia, OPT, and GALACTICA.

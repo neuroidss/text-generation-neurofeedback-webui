@@ -3,10 +3,9 @@ from pathlib import Path
 
 import gradio as gr
 import torch
+from modules import chat, shared
 
 from extensions.silero_tts import tts_preprocessor
-from modules import chat, shared
-from modules.utils import gradio
 
 torch._C._jit_set_profiling_mode(False)
 
@@ -17,11 +16,11 @@ params = {
     'language': 'en',
     'model_id': 'v3_en',
     'sample_rate': 48000,
-    'device': 'cpu',
-    'show_text': False,
+    'device': 'cpu',#'cuda',
+    'show_text': True,#False,
     'autoplay': True,
-    'voice_pitch': 'medium',
-    'voice_speed': 'medium',
+    'voice_pitch': 'x-high',#'medium',
+    'voice_speed': 'x-slow',#'medium',
     'local_cache_path': ''  # User can override the default cache path to something other via settings.json
 }
 
@@ -57,24 +56,20 @@ def load_model():
     return model
 
 
-def remove_tts_from_history(history):
-    for i, entry in enumerate(history['internal']):
-        history['visible'][i] = [history['visible'][i][0], entry[1]]
-
-    return history
+def remove_tts_from_history():
+    for i, entry in enumerate(shared.history['internal']):
+        shared.history['visible'][i] = [shared.history['visible'][i][0], entry[1]]
 
 
-def toggle_text_in_history(history):
-    for i, entry in enumerate(history['visible']):
+def toggle_text_in_history():
+    for i, entry in enumerate(shared.history['visible']):
         visible_reply = entry[1]
         if visible_reply.startswith('<audio'):
             if params['show_text']:
-                reply = history['internal'][i][1]
-                history['visible'][i] = [history['visible'][i][0], f"{visible_reply.split('</audio>')[0]}</audio>\n\n{reply}"]
+                reply = shared.history['internal'][i][1]
+                shared.history['visible'][i] = [shared.history['visible'][i][0], f"{visible_reply.split('</audio>')[0]}</audio>\n\n{reply}"]
             else:
-                history['visible'][i] = [history['visible'][i][0], f"{visible_reply.split('</audio>')[0]}</audio>"]
-
-    return history
+                shared.history['visible'][i] = [shared.history['visible'][i][0], f"{visible_reply.split('</audio>')[0]}</audio>"]
 
 
 def state_modifier(state):
@@ -85,7 +80,7 @@ def state_modifier(state):
     return state
 
 
-def input_modifier(string, state):
+def input_modifier(string):
     if not params['activate']:
         return string
 
@@ -104,8 +99,11 @@ def history_modifier(history):
     return history
 
 
-def output_modifier(string, state):
+def output_modifier(string):
     global model, current_params, streaming_state
+
+    print('output_modifier string: ', string)
+    
     for i in params:
         if params[i] != current_params[i]:
             model = load_model()
@@ -121,7 +119,7 @@ def output_modifier(string, state):
     if string == '':
         string = '*Empty reply, try regenerating*'
     else:
-        output_file = Path(f'extensions/silero_tts/outputs/{state["character_menu"]}_{int(time.time())}.wav')
+        output_file = Path(f'extensions/silero_tts/outputs/{shared.character}_{int(time.time())}.wav')
         prosody = '<prosody rate="{}" pitch="{}">'.format(params['voice_speed'], params['voice_pitch'])
         silero_input = f'<speak>{prosody}{xmlesc(string)}</prosody></speak>'
         model.save_wav(ssml_text=silero_input, speaker=params['speaker'], sample_rate=int(params['sample_rate']), audio_path=str(output_file))
@@ -160,24 +158,23 @@ def ui():
 
         gr.Markdown('[Click here for Silero audio samples](https://oobabooga.github.io/silero-samples/index.html)')
 
-    if shared.is_chat():
-        # Convert history with confirmation
-        convert_arr = [convert_confirm, convert, convert_cancel]
-        convert.click(lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=True)], None, convert_arr)
-        convert_confirm.click(
-            lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, convert_arr).then(
-            remove_tts_from_history, gradio('history'), gradio('history')).then(
-            chat.save_persistent_history, gradio('history', 'character_menu', 'mode'), None).then(
-            chat.redraw_html, shared.reload_inputs, gradio('display'))
+    # Convert history with confirmation
+    convert_arr = [convert_confirm, convert, convert_cancel]
+    convert.click(lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=True)], None, convert_arr)
+    convert_confirm.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, convert_arr).then(
+        remove_tts_from_history, None, None).then(
+        chat.save_history, shared.gradio['mode'], None, show_progress=False).then(
+        chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
 
-        convert_cancel.click(lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, convert_arr)
+    convert_cancel.click(lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, convert_arr)
 
-        # Toggle message text in history
-        show_text.change(
-            lambda x: params.update({"show_text": x}), show_text, None).then(
-            toggle_text_in_history, gradio('history'), gradio('history')).then(
-            chat.save_persistent_history, gradio('history', 'character_menu', 'mode'), None).then(
-            chat.redraw_html, shared.reload_inputs, gradio('display'))
+    # Toggle message text in history
+    show_text.change(
+        lambda x: params.update({"show_text": x}), show_text, None).then(
+        toggle_text_in_history, None, None).then(
+        chat.save_history, shared.gradio['mode'], None, show_progress=False).then(
+        chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
 
     # Event functions to update the parameters in the backend
     activate.change(lambda x: params.update({"activate": x}), activate, None)

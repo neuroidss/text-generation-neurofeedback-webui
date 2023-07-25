@@ -15,6 +15,7 @@ https://github.com/neuroidss/text-generation-neurofeedback-webui/blob/main/modul
             attention_mask = _coherence_attention_mask(attention_mask, key_states)
           attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask, is_causal=False)
 ```
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/neuroidss/text-generation-neurofeedback-webui/blob/main/text-generation_neurofeedback_colab.ipynb)
 
 # Text generation web UI
 

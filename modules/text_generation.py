@@ -8,7 +8,6 @@ import traceback
 import numpy as np
 import torch
 import transformers
-from transformers import LogitsProcessorList
 
 import modules.shared as shared
 from modules.callbacks import (
@@ -48,8 +47,37 @@ def encode(prompt, add_special_tokens=True, add_bos_token=True, truncation_lengt
             input_ids = input_ids[:, 1:]
 
     # Handling truncation
+    print('encode input_ids, prompt:', input_ids, ', ', prompt)
+    print('encode truncation_length:', truncation_length)
     if truncation_length is not None:
+      if False:
         input_ids = input_ids[:, -truncation_length:]
+      else:
+        name2_instruct = '### Assistant:'
+        name2_instruct_ids = shared.tokenizer.encode(str(name2_instruct))
+        name2_instruct_ids = np.array(name2_instruct_ids).reshape(1, len(name2_instruct_ids))
+        print('encode name2_instruct_ids, name2_instruct:', name2_instruct_ids, ', ', name2_instruct)
+        search_start_idx = len(input_ids[0])-1
+        while not((name2_instruct_ids[0][len(name2_instruct_ids[0])-1]==input_ids[0][search_start_idx]) and
+              (name2_instruct_ids[0][len(name2_instruct_ids[0])-2]==input_ids[0][search_start_idx-1]) and
+              (name2_instruct_ids[0][len(name2_instruct_ids[0])-3]==input_ids[0][search_start_idx-2])):
+          search_start_idx = search_start_idx - 1
+        input_start_ids=input_ids[:, :(search_start_idx+1)]
+        while(len(input_ids[0])>truncation_length):
+          search_end_line_idx = search_start_idx
+          if False:
+            while ((search_end_line_idx<len(input_ids[0]))and(input_ids[0][search_end_line_idx]!=13)):
+              search_end_line_idx = search_end_line_idx + 1
+          else:
+            while ((search_end_line_idx<len(input_ids[0]))and(search_start_idx+(len(input_ids[0])-search_end_line_idx)>(truncation_length))):
+              search_end_line_idx = search_end_line_idx + 1
+          if search_end_line_idx<len(input_ids[0]):
+            input_end_ids=input_ids[:, (search_end_line_idx+1):]
+            if len(input_end_ids[0])>0:
+              input_ids = torch.cat((input_start_ids, input_end_ids),-1)
+            else:
+              input_ids = input_start_ids
+    print('encode input_ids:', input_ids)
 
     if shared.model.__class__.__name__ in ['LlamaCppModel', 'RWKVModel', 'ExllamaModel'] or shared.args.cpu:
         return input_ids
@@ -57,7 +85,7 @@ def encode(prompt, add_special_tokens=True, add_bos_token=True, truncation_lengt
         return input_ids.numpy()
     elif shared.args.deepspeed:
         return input_ids.to(device=local_rank)
-    elif torch.backends.mps.is_available():
+    elif torch.has_mps:
         device = torch.device('mps')
         return input_ids.to(device)
     else:
@@ -191,7 +219,7 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False):
     original_question = question
     if not is_chat:
         state = apply_extensions('state', state)
-        question = apply_extensions('input', question, state)
+        question = apply_extensions('input', question)
 
     # Finding the stopping strings
     all_stop_strings = []
@@ -216,7 +244,9 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False):
         reply, stop_found = apply_stopping_strings(reply, all_stop_strings)
         if is_stream:
             cur_time = time.time()
-            if cur_time - last_update > 0.041666666666666664:  # Limit streaming to 24 fps
+            if cur_time - last_update > shared.settings['limit_streaming']:  # Limit streaming to 24 fps
+#            if cur_time - last_update > 0.041666666666666664:  # Limit streaming to 24 fps
+            
                 last_update = cur_time
                 yield reply
 
@@ -224,7 +254,7 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False):
             break
 
     if not is_chat:
-        reply = apply_extensions('output', reply, state)
+        reply = apply_extensions('output', reply)
 
     yield reply
 
@@ -263,14 +293,7 @@ def generate_reply_HF(question, original_question, seed, state, stopping_strings
     eos_token_ids = [shared.tokenizer.eos_token_id] if shared.tokenizer.eos_token_id is not None else []
     generate_params['eos_token_id'] = eos_token_ids
     generate_params['stopping_criteria'] = transformers.StoppingCriteriaList()
-    generate_params['stopping_criteria'].append(_StopEverythingStoppingCriteria())
-
-    processor = state.get('logits_processor', LogitsProcessorList([]))
-    # In case folks just pass in a processor by itself.
-    if type(processor) != LogitsProcessorList:
-        processor = LogitsProcessorList([processor])
-    apply_extensions('logits_processor', processor, input_ids)
-    generate_params['logits_processor'] = processor
+    generate_params['stopping_criteria'].append(_StopEverythingStoppingCriteria());
 
     t0 = time.time()
     try:

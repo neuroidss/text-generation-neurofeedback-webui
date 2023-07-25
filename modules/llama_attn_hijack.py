@@ -9,6 +9,10 @@ import transformers.models.llama.modeling_llama
 import modules.shared as shared
 from modules.logging_colors import logger
 
+#_attention_type = "random"
+_attention_type = "default"
+_coherence_json = "{}"
+
 if shared.args.xformers:
     try:
         import xformers.ops
@@ -134,7 +138,27 @@ def sdp_attention_forward(
 
     # We only apply sdp attention if we don't need to output the whole attention matrix
     if not output_attentions:
-        attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask, is_causal=False)
+#        print('q.shape: '+str(query_states.shape)+', k.shape: '+str(key_states.shape)+', attn_mask.shape: '+str(attention_mask.shape))
+#        print('query_states: '+str(query_states)+', key_states: '+str(key_states)+', attention_mask: '+str(attention_mask))
+#        print('attention_mask: '+str(attention_mask))
+        global _coherence_json
+        global _attention_type
+        _attention_type = shared.settings['attention_type']
+        _coherence_json = shared.settings['coherence_json']
+#        print('_attention_type: '+str(_attention_type))
+        
+        if _attention_type == "default":
+          attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask, is_causal=False)
+        else:
+#          print('query_states: '+str(query_states)+', key_states: '+str(key_states)+', attention_mask: '+str(attention_mask))
+#          print('attention_mask: '+str(attention_mask))
+          if query_states.shape[2] == key_states.shape[3]:
+            attention_mask = _coherence_attention_mask(query_states, key_states)
+          else:
+            attention_mask = _coherence_attention_mask(attention_mask, key_states)
+#          print('q.shape: '+str(query_states.shape)+', k.shape: '+str(key_states.shape)+', attn_mask.shape: '+str(attention_mask.shape))
+#          print('attention_mask: '+str(attention_mask))
+          attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask, is_causal=False)
         attn_weights = None
     else:
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
@@ -169,3 +193,80 @@ def sdp_attention_forward(
     attn_output = self.o_proj(attn_output)
 
     return attn_output, attn_weights, past_key_value
+    
+def _coherence_attention_mask(query: torch._C.Value, key: torch._C.Value
+) -> torch._C.Value:
+    global _coherence_json
+    global _attention_type
+
+    L = query.shape[2]
+    S = key.shape[2]
+    print('L: '+str(L)+', S: '+str(S))
+#    L = 400
+#    S = 400
+    mask = torch.ones(L, S, device=query.device, dtype=torch.bool).tril(diagonal=0)
+#    attn_mask = torch.ones(L, S, device=query.device, dtype=query.dtype).tril(diagonal=0)
+#    attn_mask = torch.zeros(L, S, device=query.device, dtype=query.dtype)
+#    attn_mask = torch.ones(L, S, device=query.device, dtype=query.dtype)
+
+#    print(' '.join(globals()).split(' '))
+    
+    if _attention_type == "random":
+#    if True:
+#    if False:
+#      attn_mask = torch.rand(L, S, device=query.device, dtype=query.dtype)/100
+      attn_mask = torch.rand(L, S, device=query.device, dtype=query.dtype)/1
+#      attn_mask = torch.zeros(L, S, device=query.device, dtype=query.dtype)
+      attn_mask = attn_mask.masked_fill(mask==False, -65504.)
+      attn_mask = attn_mask.reshape([1, 1, L, S])
+      if L == 1:
+#      attn_mask = torch.zeros(1, 1, L, S, device=query.device, dtype=query.dtype)
+#      attn_mask = torch.rand(1, 1, L, S, device=query.device, dtype=query.dtype)/100
+        attn_mask = torch.rand(1, 1, L, S, device=query.device, dtype=query.dtype)/1
+    if _attention_type == "coherence":
+#    if True:
+#    if False:
+      import json
+      import numpy as np
+      coherence_tril = json.loads(_coherence_json)
+      coherence_tril_tensor = torch.Tensor(coherence_tril).to(query.device).type(query.dtype)
+      L_max = shared.settings['truncation_length']-1
+      mask_max = torch.ones(L_max, L_max, device=query.device, dtype=torch.bool).tril(diagonal=0)
+      lower_indices = np.tril_indices(L_max, k = -1)
+      attn_mask_max = torch.zeros(L_max, L_max, device=query.device, dtype=query.dtype)
+#      print('lower_indices: '+str(lower_indices))
+      attn_mask_max[lower_indices] = coherence_tril_tensor
+#      attn_mask_max = torch.rand(L_max, L_max, device=query.device, dtype=query.dtype)/1
+
+      attn_mask = torch.zeros(L, S, device=query.device, dtype=query.dtype)
+#      attn_mask = torch.rand(L, S, device=query.device, dtype=query.dtype)
+
+#      attn_mask = torch.zeros(L, S, device=query.device, dtype=query.dtype)
+#      print('lower_indices: '+str(lower_indices))
+#      attn_mask[lower_indices] = coherence_tril_tensor
+#    print('attn_mask: '+str(attn_mask))
+#    print('mask: '+str(mask))
+#    attn_mask = attn_mask.masked_fill(mask==False, -float('inf'))
+      attn_mask_max = attn_mask_max.masked_fill(mask_max==False, -65504.)
+      if L==1:
+        attn_mask[:,:] = attn_mask_max[S-1,:S]
+      else:
+        attn_mask[:,:] = attn_mask_max[:L,:S]
+      attn_mask = attn_mask.reshape([1, 1, L, S])
+#      if L == 1:
+#      attn_mask = torch.zeros(1, 1, L, S, device=query.device, dtype=query.dtype)
+#      attn_mask = torch.rand(1, 1, L, S, device=query.device, dtype=query.dtype)/100
+#        attn_mask = attn_mask_max[:,:,S-1,:S]
+
+
+#      attn_mask = torch.rand(L, S, device=query.device, dtype=query.dtype)/1
+#      attn_mask = torch.zeros(L, S, device=query.device, dtype=query.dtype)
+#      attn_mask = attn_mask.masked_fill(mask==False, -65504.)
+#      attn_mask = attn_mask.reshape([1, 1, L, S])
+#      if L == 1:
+#      attn_mask = torch.zeros(1, 1, L, S, device=query.device, dtype=query.dtype)
+#      attn_mask = torch.rand(1, 1, L, S, device=query.device, dtype=query.dtype)/100
+#        attn_mask = torch.rand(1, 1, L, S, device=query.device, dtype=query.dtype)/1
+        
+    return attn_mask
+    

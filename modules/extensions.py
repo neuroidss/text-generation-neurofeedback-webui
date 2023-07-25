@@ -6,8 +6,6 @@ import gradio as gr
 import extensions
 import modules.shared as shared
 from modules.logging_colors import logger
-from inspect import signature
-
 
 state = {}
 available_extensions = []
@@ -54,14 +52,10 @@ def iterator():
 
 
 # Extension functions that map string -> string
-def _apply_string_extensions(function_name, text, state):
+def _apply_string_extensions(function_name, text):
     for extension, _ in iterator():
         if hasattr(extension, function_name):
-            func = getattr(extension, function_name)
-            if len(signature(func).parameters) == 2:
-                text = func(text, state)
-            else:
-                text = func(text)
+            text = getattr(extension, function_name)(text)
 
     return text
 
@@ -106,21 +100,13 @@ def _apply_history_modifier_extensions(history):
     return history
 
 
-# Extension functions that override the default tokenizer output - The order of execution is not defined
+# Extension functions that override the default tokenizer output - currently only the first one will work
 def _apply_tokenizer_extensions(function_name, state, prompt, input_ids, input_embeds):
     for extension, _ in iterator():
         if hasattr(extension, function_name):
-            prompt, input_ids, input_embeds = getattr(extension, function_name)(state, prompt, input_ids, input_embeds)
+            return getattr(extension, function_name)(state, prompt, input_ids, input_embeds)
 
     return prompt, input_ids, input_embeds
-
-
-# Allow extensions to add their own logits processors to the stack being run.
-# Each extension would call `processor_list.append({their LogitsProcessor}())`.
-def _apply_logits_processor_extensions(function_name, processor_list, input_ids):
-    for extension, _ in iterator():
-        if hasattr(extension, function_name):
-            getattr(extension, function_name)(processor_list, input_ids)
 
 
 # Get prompt length in tokens after applying extension functions which override the default tokenizer output
@@ -191,7 +177,6 @@ EXTENSION_MAP = {
     "history": _apply_history_modifier_extensions,
     "bot_prefix": partial(_apply_string_extensions, "bot_prefix_modifier"),
     "tokenizer": partial(_apply_tokenizer_extensions, "tokenizer_modifier"),
-    'logits_processor': partial(_apply_logits_processor_extensions, 'logits_processor_modifier'),
     "input_hijack": _apply_input_hijack,
     "custom_generate_chat_prompt": _apply_custom_generate_chat_prompt,
     "custom_generate_reply": _apply_custom_generate_reply,

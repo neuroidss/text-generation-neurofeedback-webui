@@ -99,10 +99,7 @@ def apply_model_settings_to_state(model, state):
 
     for k in model_settings:
         if k in state:
-            if k in ['wbits', 'groupsize']:
-                state[k] = str(model_settings[k])
-            else:
-                state[k] = model_settings[k]
+            state[k] = model_settings[k]
 
     return state
 

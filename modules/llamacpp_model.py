@@ -1,19 +1,19 @@
+'''
+Based on
+https://github.com/abetlen/llama-cpp-python
+
+Documentation:
+https://abetlen.github.io/llama-cpp-python/
+'''
+
 import re
 from functools import partial
 
-import torch
+from llama_cpp import Llama, LlamaCache, LogitsProcessorList
 
 from modules import shared
 from modules.callbacks import Iteratorize
 from modules.logging_colors import logger
-
-if torch.cuda.is_available() and not torch.version.hip:
-    try:
-        from llama_cpp_cuda import Llama, LlamaCache, LogitsProcessorList
-    except:
-        from llama_cpp import Llama, LlamaCache, LogitsProcessorList
-else:
-    from llama_cpp import Llama, LlamaCache, LogitsProcessorList
 
 
 def ban_eos_logits_processor(eos_token, input_ids, logits):
@@ -49,12 +49,7 @@ class LlamaCppModel:
             'n_batch': shared.args.n_batch,
             'use_mmap': not shared.args.no_mmap,
             'use_mlock': shared.args.mlock,
-            'low_vram': shared.args.low_vram,
-            'n_gpu_layers': shared.args.n_gpu_layers,
-            'rope_freq_base': 10000 * shared.args.alpha_value ** (64/63.),
-            'rope_freq_scale': 1.0 / shared.args.compress_pos_emb,
-            'n_gqa': shared.args.n_gqa or None,
-            'rms_norm_eps': shared.args.rms_norm_eps or None,
+            'n_gpu_layers': shared.args.n_gpu_layers
         }
 
         result.model = Llama(**params)
@@ -69,9 +64,6 @@ class LlamaCppModel:
             string = string.encode()
 
         return self.model.tokenize(string)
-
-    def decode(self, tokens):
-        return self.model.detokenize(tokens)
 
     def generate(self, prompt, state, callback=None):
         prompt = prompt if type(prompt) is str else prompt.decode()

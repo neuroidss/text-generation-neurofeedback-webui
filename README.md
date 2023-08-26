@@ -17,6 +17,9 @@ https://github.com/neuroidss/text-generation-neurofeedback-webui/blob/main/modul
 ```
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/neuroidss/text-generation-neurofeedback-webui/blob/main/text-generation_neurofeedback_colab.ipynb)
 
+here example of music with poetry, where electroencephalography coherence sent as attention mask to both musicgen and text generation transformers as streaming, for neurofeedback:
+https://drive.google.com/file/d/1CP3KXWBQ69m_MWdVgouhqEu6sSZow8cu/view?usp=drive_link
+
 # Text generation web UI
 
 A gradio web UI for running Large Language Models like LLaMA, llama.cpp, GPT-J, Pythia, OPT, and GALACTICA.

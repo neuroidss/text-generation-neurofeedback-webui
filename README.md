@@ -19,6 +19,7 @@ https://github.com/neuroidss/text-generation-neurofeedback-webui/blob/main/modul
 
 here example of music with poetry, where electroencephalography coherence sent as attention mask to both musicgen and text generation transformers as streaming, for neurofeedback:
 https://drive.google.com/file/d/1CP3KXWBQ69m_MWdVgouhqEu6sSZow8cu/view?usp=drive_link
+https://drive.google.com/file/d/12VXQOy1rUIXZ73S2tX5UBYhH9anTghHe/view?usp=sharing
 
 # Text generation web UI
 
